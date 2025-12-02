@@ -7,7 +7,7 @@ import time
 from datetime import datetime
 import numpy as np
 
-# --- 1. 全局配置 ---
+# --- 1. 页面配置 ---
 st.set_page_config(
     page_title="PolySniper Pro (US)",
     page_icon="🦅",
@@ -27,20 +27,23 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. 数据引擎 (切换为 Kraken 以适配美国服务器) ---
+# --- 2. 数据引擎 (切换为 Kraken + BTC/USD) ---
 @st.cache_resource
 def init_exchange():
-    # 使用 Kraken 交易所，因为它允许美国 IP (Streamlit Server) 访问
+    # Kraken 允许美国 IP 访问，非常适合 Streamlit Cloud
     return ccxt.kraken({'enableRateLimit': True})
 
 def fetch_data_robust():
     start_time = time.time()
     exchange = init_exchange()
-    symbol = 'BTC/USD'  # Kraken 使用 USD 交易对
+    
+    # 关键修改：Kraken 使用 BTC/USD，而不是 USDT
+    symbol = 'BTC/USD'
+    
     try:
         ticker = exchange.fetch_ticker(symbol)
         
-        # Kraken 的 K 线获取逻辑
+        # 获取 K 线
         bars_15m = exchange.fetch_ohlcv(symbol, timeframe='15m', limit=60)
         bars_3m = exchange.fetch_ohlcv(symbol, timeframe='3m', limit=30)
         
@@ -62,7 +65,13 @@ def fetch_data_robust():
 def calculate_analytics(price, df_15m, df_3m, mins_left, poly_yes, poly_no):
     curr = df_15m.iloc[-1]
     open_price = curr['open']
-    atr = df_15m.iloc[-2]['ATR'] if pd.notnull(df_15m.iloc[-2]['ATR']) else price * 0.005
+    
+    # ATR 容错处理
+    if pd.notnull(df_15m.iloc[-2]['ATR']):
+        atr = df_15m.iloc[-2]['ATR']
+    else:
+        atr = price * 0.005 # 如果刚开始没算出ATR，给一个默认值
+        
     gap = price - open_price
     
     score = 50
@@ -96,7 +105,7 @@ def calculate_analytics(price, df_15m, df_3m, mins_left, poly_yes, poly_no):
 # --- 4. 界面布局 ---
 with st.sidebar:
     st.markdown("## 🦅 PolySniper Pro")
-    st.caption("Data Source: Kraken (US Compatible)")
+    st.caption("Data: Kraken (US Compatible)")
     st.divider()
     col_s1, col_s2 = st.columns(2)
     with col_s1: poly_yes = st.number_input("YES Price (¢)", 1, 99, 65)
@@ -116,7 +125,7 @@ ph_chart = st.empty()
 
 st.markdown("""
     <div class="disclaimer">
-    ⚠️ <b>风险提示：</b> 本工具仅用于辅助决策。数据源已切换为 Kraken 以适配美国服务器环境。
+    ⚠️ <b>Note:</b> Data source switched to Kraken (BTC/USD) to ensure US server compatibility.
     </div>
 """, unsafe_allow_html=True)
 
@@ -125,7 +134,7 @@ if run_app:
         price, df_15m, df_3m, latency, error_msg = fetch_data_robust()
         
         if error_msg:
-            ph_error.error(f"连接重试中: {error_msg}")
+            ph_error.error(f"Connecting... {error_msg}")
             time.sleep(3)
             continue
         else:
@@ -144,19 +153,19 @@ if run_app:
             color_lat = "#00C851" if latency < 800 else "#ffbb33"
             ph_latency.markdown(f"""
             <div style="font-size:12px; color:#666; margin-bottom:10px;">
-                📡 Data Source: Kraken | Latency: <b style="color:{color_lat}">{latency:.0f}ms</b>
+                📡 Source: Kraken | Latency: <b style="color:{color_lat}">{latency:.0f}ms</b>
             </div>
             """, unsafe_allow_html=True)
 
             with ph_dash.container():
                 c1, c2, c3, c4, c5 = st.columns(5)
                 c1.metric("倒计时", f"{mins_left-1}:{secs_left:02d}")
-                c2.metric("BTC 现价", f"${price:,.2f}")
+                c2.metric("BTC Price", f"${price:,.2f}")
                 c3.metric("Gap", f"${gap:+.2f}", delta_color="off")
                 prob_color = "normal" if ai_prob > 50 else "inverse"
-                c4.metric("AI 胜率", f"{ai_prob:.1f}%", delta=direction, delta_color=prob_color)
-                ev_label = "建议下注" if ev > 0.05 else "建议观望"
-                c5.metric("EV 期望", f"{ev:+.2f}", delta=ev_label)
+                c4.metric("AI Win Rate", f"{ai_prob:.1f}%", delta=direction, delta_color=prob_color)
+                ev_label = "BET" if ev > 0.05 else "WAIT"
+                c5.metric("EV", f"{ev:+.2f}", delta=ev_label)
 
             with ph_chart.container():
                 fig = make_subplots(rows=1, cols=1)
@@ -168,7 +177,7 @@ if run_app:
                 fig.add_hline(y=price, line_color="#ffbb33", line_width=1, line_dash="dot", annotation_text="NOW")
                 fig.update_layout(
                     height=500, margin=dict(l=0, r=0, t=30, b=0), xaxis_rangeslider_visible=False, template="plotly_dark",
-                    title={'text': f"Micro Structure: Gap ${gap:+.2f}", 'y':0.95, 'x':0.5, 'xanchor': 'center'},
+                    title={'text': f"Micro Battle: Gap ${gap:+.2f}", 'y':0.95, 'x':0.5, 'xanchor': 'center'},
                     uirevision='constant'
                 )
                 st.plotly_chart(fig, use_container_width=True)
