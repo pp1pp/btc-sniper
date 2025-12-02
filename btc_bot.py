@@ -9,7 +9,7 @@ import numpy as np
 
 # --- 1. 页面配置 ---
 st.set_page_config(
-    page_title="PolySniper Pro (US)",
+    page_title="PolySniper Pro (Global)",
     page_icon="🦅",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -27,17 +27,17 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. 数据引擎 (切换为 Kraken + BTC/USD) ---
+# --- 2. 数据引擎 (切换为 Bitstamp - 兼容性之王) ---
 @st.cache_resource
 def init_exchange():
-    # Kraken 允许美国 IP 访问，非常适合 Streamlit Cloud
-    return ccxt.kraken({'enableRateLimit': True})
+    # Bitstamp 对美国 IP 非常友好，且公共数据无需 API Key
+    return ccxt.bitstamp({'enableRateLimit': True})
 
 def fetch_data_robust():
     start_time = time.time()
     exchange = init_exchange()
     
-    # 关键修改：Kraken 使用 BTC/USD，而不是 USDT
+    # Bitstamp 使用标准的 BTC/USD
     symbol = 'BTC/USD'
     
     try:
@@ -66,11 +66,11 @@ def calculate_analytics(price, df_15m, df_3m, mins_left, poly_yes, poly_no):
     curr = df_15m.iloc[-1]
     open_price = curr['open']
     
-    # ATR 容错处理
+    # ATR 容错
     if pd.notnull(df_15m.iloc[-2]['ATR']):
         atr = df_15m.iloc[-2]['ATR']
     else:
-        atr = price * 0.005 # 如果刚开始没算出ATR，给一个默认值
+        atr = price * 0.005
         
     gap = price - open_price
     
@@ -105,7 +105,7 @@ def calculate_analytics(price, df_15m, df_3m, mins_left, poly_yes, poly_no):
 # --- 4. 界面布局 ---
 with st.sidebar:
     st.markdown("## 🦅 PolySniper Pro")
-    st.caption("Data: Kraken (US Compatible)")
+    st.caption("Server: Bitstamp (US Optimized)")
     st.divider()
     col_s1, col_s2 = st.columns(2)
     with col_s1: poly_yes = st.number_input("YES Price (¢)", 1, 99, 65)
@@ -125,7 +125,7 @@ ph_chart = st.empty()
 
 st.markdown("""
     <div class="disclaimer">
-    ⚠️ <b>Note:</b> Data source switched to Kraken (BTC/USD) to ensure US server compatibility.
+    ⚠️ <b>System Note:</b> Connected to Bitstamp (BTC/USD). Optimized for US server access.
     </div>
 """, unsafe_allow_html=True)
 
@@ -153,7 +153,7 @@ if run_app:
             color_lat = "#00C851" if latency < 800 else "#ffbb33"
             ph_latency.markdown(f"""
             <div style="font-size:12px; color:#666; margin-bottom:10px;">
-                📡 Source: Kraken | Latency: <b style="color:{color_lat}">{latency:.0f}ms</b>
+                📡 Source: Bitstamp | Latency: <b style="color:{color_lat}">{latency:.0f}ms</b>
             </div>
             """, unsafe_allow_html=True)
 
@@ -163,8 +163,8 @@ if run_app:
                 c2.metric("BTC Price", f"${price:,.2f}")
                 c3.metric("Gap", f"${gap:+.2f}", delta_color="off")
                 prob_color = "normal" if ai_prob > 50 else "inverse"
-                c4.metric("AI Win Rate", f"{ai_prob:.1f}%", delta=direction, delta_color=prob_color)
-                ev_label = "BET" if ev > 0.05 else "WAIT"
+                c4.metric("AI 胜率", f"{ai_prob:.1f}%", delta=direction, delta_color=prob_color)
+                ev_label = "建议下注" if ev > 0.05 else "建议观望"
                 c5.metric("EV", f"{ev:+.2f}", delta=ev_label)
 
             with ph_chart.container():
