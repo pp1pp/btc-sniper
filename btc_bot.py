@@ -7,54 +7,42 @@ import time
 from datetime import datetime
 import numpy as np
 
-# --- 1. 全局配置与页面初始化 ---
+# --- 1. 全局配置 ---
 st.set_page_config(
-    page_title="PolySniper Pro | 机构级预测终端",
+    page_title="PolySniper Pro (US)",
     page_icon="🦅",
     layout="wide",
-    initial_sidebar_state="expanded",
-    menu_items={
-        'Get Help': 'https://github.com',
-        'Report a bug': "https://github.com",
-        'About': "PolySniper Pro v1.0 - BTC 15min 盘口博弈系统"
-    }
+    initial_sidebar_state="expanded"
 )
 
-# 注入专业级 CSS (隐藏默认菜单，美化字体)
+# CSS 注入
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     .block-container { padding-top: 1rem; padding-bottom: 2rem; }
-    .stMetric { 
-        background-color: #1A1C24; 
-        border: 1px solid #2E303E; 
-        border-radius: 8px; 
-        padding: 15px; 
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }
-    [data-testid="stMetricValue"] { 
-        font-family: 'SF Mono', 'Roboto Mono', monospace; 
-        font-size: 26px; 
-        font-weight: 600;
-    }
-    [data-testid="stMetricLabel"] { font-size: 14px; color: #8F9BB3; }
+    .stMetric { background-color: #1A1C24; border: 1px solid #2E303E; border-radius: 8px; padding: 15px; }
+    [data-testid="stMetricValue"] { font-family: 'SF Mono', monospace; font-size: 26px; }
     .disclaimer { font-size: 12px; color: #555; text-align: center; margin-top: 50px; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. 健壮的数据引擎 (带重试机制) ---
+# --- 2. 数据引擎 (切换为 Kraken 以适配美国服务器) ---
 @st.cache_resource
 def init_exchange():
-    return ccxt.binance({'enableRateLimit': True})
+    # 使用 Kraken 交易所，因为它允许美国 IP (Streamlit Server) 访问
+    return ccxt.kraken({'enableRateLimit': True})
 
 def fetch_data_robust():
     start_time = time.time()
     exchange = init_exchange()
+    symbol = 'BTC/USD'  # Kraken 使用 USD 交易对
     try:
-        ticker = exchange.fetch_ticker('BTC/USDT')
-        bars_15m = exchange.fetch_ohlcv('BTC/USDT', timeframe='15m', limit=60)
-        bars_3m = exchange.fetch_ohlcv('BTC/USDT', timeframe='3m', limit=30)
+        ticker = exchange.fetch_ticker(symbol)
+        
+        # Kraken 的 K 线获取逻辑
+        bars_15m = exchange.fetch_ohlcv(symbol, timeframe='15m', limit=60)
+        bars_3m = exchange.fetch_ohlcv(symbol, timeframe='3m', limit=30)
         
         df_15m = pd.DataFrame(bars_15m, columns=['ts', 'open', 'high', 'low', 'close', 'vol'])
         df_15m['ts'] = pd.to_datetime(df_15m['ts'], unit='ms')
@@ -70,7 +58,7 @@ def fetch_data_robust():
     except Exception as e:
         return None, None, None, 0, str(e)
 
-# --- 3. 核心业务逻辑 ---
+# --- 3. 核心计算逻辑 ---
 def calculate_analytics(price, df_15m, df_3m, mins_left, poly_yes, poly_no):
     curr = df_15m.iloc[-1]
     open_price = curr['open']
@@ -105,27 +93,20 @@ def calculate_analytics(price, df_15m, df_3m, mins_left, poly_yes, poly_no):
         
     return ai_prob, ev, gap, open_price, direction
 
-# --- 4. 侧边栏 ---
+# --- 4. 界面布局 ---
 with st.sidebar:
     st.markdown("## 🦅 PolySniper Pro")
-    st.caption("v1.2.0 | Stable Build")
+    st.caption("Data Source: Kraken (US Compatible)")
     st.divider()
-    st.markdown("### 💰 市场数据录入")
     col_s1, col_s2 = st.columns(2)
-    with col_s1:
-        poly_yes = st.number_input("YES 价格 (¢)", 1, 99, 65)
-    with col_s2:
-        poly_no = st.number_input("NO 价格 (¢)", 1, 99, 35)
+    with col_s1: poly_yes = st.number_input("YES Price (¢)", 1, 99, 65)
+    with col_s2: poly_no = st.number_input("NO Price (¢)", 1, 99, 35)
     st.divider()
-    st.markdown("### 🖥️ 系统状态")
-    run_app = st.toggle("连接交易所数据流", value=True)
+    run_app = st.toggle("Live Data Stream", value=True)
     status_ph = st.empty()
-    if run_app:
-        status_ph.success("● 在线 (Online)")
-    else:
-        status_ph.warning("○ 离线 (Offline)")
+    if run_app: status_ph.success("● Online")
+    else: status_ph.warning("○ Offline")
 
-# --- 5. 主工作区 ---
 st.title("🦅 PolySniper 机构级终端")
 
 ph_error = st.empty()
@@ -135,8 +116,7 @@ ph_chart = st.empty()
 
 st.markdown("""
     <div class="disclaimer">
-    ⚠️ <b>风险提示：</b> 本工具仅用于数据分析与辅助决策，不构成任何投资建议。<br>
-    加密货币与预测市场属于高风险投资，请严格控制仓位。
+    ⚠️ <b>风险提示：</b> 本工具仅用于辅助决策。数据源已切换为 Kraken 以适配美国服务器环境。
     </div>
 """, unsafe_allow_html=True)
 
@@ -145,7 +125,7 @@ if run_app:
         price, df_15m, df_3m, latency, error_msg = fetch_data_robust()
         
         if error_msg:
-            ph_error.error(f"网络连接中断: {error_msg} | 正在重试...")
+            ph_error.error(f"连接重试中: {error_msg}")
             time.sleep(3)
             continue
         else:
@@ -163,21 +143,20 @@ if run_app:
             
             color_lat = "#00C851" if latency < 800 else "#ffbb33"
             ph_latency.markdown(f"""
-            <div style="font-size:12px; color:#666; margin-bottom:10px; display:flex; justify-content:space-between;">
-                <span>📡 Binance Data Stream</span>
-                <span>Latency: <b style="color:{color_lat}">{latency:.0f}ms</b></span>
+            <div style="font-size:12px; color:#666; margin-bottom:10px;">
+                📡 Data Source: Kraken | Latency: <b style="color:{color_lat}">{latency:.0f}ms</b>
             </div>
             """, unsafe_allow_html=True)
 
             with ph_dash.container():
                 c1, c2, c3, c4, c5 = st.columns(5)
-                c1.metric("⏱️ 结算倒计时", f"{mins_left-1}:{secs_left:02d}")
-                c2.metric("💰 BTC 现价", f"${price:,.2f}")
-                c3.metric("📏 距离胜负线", f"${gap:+.2f}", delta_color="off")
-                prob_delta_color = "normal" if ai_prob > 50 else "inverse"
-                c4.metric("🧠 AI 胜率", f"{ai_prob:.1f}%", delta=direction, delta_color=prob_delta_color)
-                ev_label = "✅ 建议下注" if ev > 0.05 else "🚫 建议观望"
-                c5.metric("⚖️ EV 期望值", f"{ev:+.2f}", delta=ev_label)
+                c1.metric("倒计时", f"{mins_left-1}:{secs_left:02d}")
+                c2.metric("BTC 现价", f"${price:,.2f}")
+                c3.metric("Gap", f"${gap:+.2f}", delta_color="off")
+                prob_color = "normal" if ai_prob > 50 else "inverse"
+                c4.metric("AI 胜率", f"{ai_prob:.1f}%", delta=direction, delta_color=prob_color)
+                ev_label = "建议下注" if ev > 0.05 else "建议观望"
+                c5.metric("EV 期望", f"{ev:+.2f}", delta=ev_label)
 
             with ph_chart.container():
                 fig = make_subplots(rows=1, cols=1)
@@ -185,17 +164,13 @@ if run_app:
                     x=df_3m['ts'], open=df_3m['open'], high=df_3m['high'], low=df_3m['low'], close=df_3m['close'],
                     name="3m K-Line", increasing_line_color='#00C851', decreasing_line_color='#ff4444'
                 ))
-                fig.add_hline(y=open_price, line_color="#33b5e5", line_width=2, line_dash="solid", annotation_text="OPEN (胜负线)")
-                fig.add_hline(y=price, line_color="#ffbb33", line_width=1, line_dash="dot", annotation_text="CURRENT")
+                fig.add_hline(y=open_price, line_color="#33b5e5", line_width=2, annotation_text="OPEN")
+                fig.add_hline(y=price, line_color="#ffbb33", line_width=1, line_dash="dot", annotation_text="NOW")
                 fig.update_layout(
-                    height=550,
-                    margin=dict(l=0, r=0, t=30, b=0),
-                    xaxis_rangeslider_visible=False,
-                    template="plotly_dark",
-                    title={'text': f"Micro-Battlefield: Gap ${gap:+.2f}", 'y':0.95, 'x':0.5, 'xanchor': 'center', 'yanchor': 'top'},
-                    font=dict(family="Roboto, monospace"),
-                    uirevision='constant_value'
+                    height=500, margin=dict(l=0, r=0, t=30, b=0), xaxis_rangeslider_visible=False, template="plotly_dark",
+                    title={'text': f"Micro Structure: Gap ${gap:+.2f}", 'y':0.95, 'x':0.5, 'xanchor': 'center'},
+                    uirevision='constant'
                 )
                 st.plotly_chart(fig, use_container_width=True)
         
-        time.sleep(0.5)
+        time.sleep(1)
